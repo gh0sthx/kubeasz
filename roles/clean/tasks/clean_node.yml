@@ -10,8 +10,6 @@
 
   - name: umount kubelet filesystems
     shell: "mount | grep '/var/lib/kubelet'| awk '{print $3}'|xargs umount || exit 0"
-    args:
-      warn: false
     ignore_errors: true
 
   - name: remove files and dirs of 'kube_node' nodes
@@ -25,6 +23,7 @@
     - "/etc/kube-lb/"
     - "/etc/kubernetes/"
     - "/root/.kube/config"
+    ignore_errors: true
 
 # to clean container runtime and networking
   - block:
@@ -49,20 +48,14 @@
   
         - name: umount docker filesystem-3
           shell: "echo /var/lib/docker/overlay2/*/merged|xargs umount || exit 0"
-          args:
-            warn: false
           ignore_errors: true
 
         - name: umount docker filesystem-4
           shell: "echo /var/lib/docker/containers/*/mounts/shm|xargs umount || exit 0"
-          args:
-            warn: false
           ignore_errors: true
 
         - name: umount docker filesystem-5
           shell: "echo /var/run/docker/netns/*|xargs umount || exit 0"
-          args:
-            warn: false
           ignore_errors: true
 
         - name: remove files and dirs
@@ -91,8 +84,6 @@
 
       - name: umount containerd filesystems
         shell: "mount | grep 'containerd/io.containerd'| awk '{print $3}'|xargs umount || exit 0"
-        args:
-          warn: false
         ignore_errors: true
 
       - name: remove files and dirs
@@ -113,22 +104,19 @@
     - "/etc/cni/"
     - "/run/flannel/"
     - "/etc/calico/"
-    - "/var/run/calico/"
     - "/var/lib/calico/"
     - "/var/log/calico/"
     - "/etc/cilium/"
     - "/sys/fs/bpf/tc/"
     - "/var/lib/cni/"
     - "/var/lib/kube-router/"
-    - "/opt/kube/kube-ovn/"
     - "/var/run/openvswitch/"
-    - "/etc/origin/openvswitch/"
-    - "/etc/openvswitch/"
-    - "/var/log/openvswitch/"
     - "/var/run/ovn/"
+    - "/etc/origin/openvswitch/"
     - "/etc/origin/ovn/"
-    - "/etc/ovn/"
+    - "/var/log/openvswitch/"
     - "/var/log/ovn/"
+    - "/var/log/kube-ovn/"
     ignore_errors: true
 
   when: "inventory_hostname in groups['kube_master'] or inventory_hostname in groups['kube_node']"

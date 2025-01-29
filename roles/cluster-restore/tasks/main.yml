@@ -4,16 +4,16 @@
 - name: 清除etcd 数据目录
   file: name={{ ETCD_DATA_DIR }}/member state=absent
 
+- name: 清理上次备份恢复数据
+  file: name=/etcd_backup state=absent
+
 - name: 生成备份目录
   file: name=/etcd_backup state=directory
 
 - name: 准备指定的备份etcd 数据
-  copy: 
+  copy:
     src: "{{ cluster_dir }}/backup/{{ db_to_restore }}"
     dest: "/etcd_backup/snapshot.db"
-
-- name: 清理上次备份恢复数据
-  file: name=/etcd_backup/etcd-{{ inventory_hostname }}.etcd state=absent
 
 - name: etcd 数据恢复
   shell: "cd /etcd_backup && \

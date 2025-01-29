@@ -1,5 +1,6 @@
 #!/bin/bash
 #  Create & manage k8s clusters
+#  shellcheck disable=SC2155
 
 set -o nounset
 set -o errexit
@@ -20,7 +21,7 @@ Cluster setups:
     destroy     <cluster>            to destroy the k8s cluster
     backup      <cluster>            to backup the cluster state (etcd snapshot)
     restore     <cluster>            to restore the cluster state from backups
-    start-aio		             to quickly setup an all-in-one cluster with 'default' settings
+    start-aio		             to quickly setup an all-in-one cluster with default settings
 
 Cluster ops:
     add-etcd    <cluster>  <ip>      to add a etcd-node to the etcd cluster
@@ -31,6 +32,7 @@ Cluster ops:
     del-node    <cluster>  <ip>      to delete a work node from the k8s cluster
 
 Extra operation:
+    kca-renew   <cluster>            to force renew CA certs and all the other certs (with caution)
     kcfg-adm    <cluster>  <args>    to manage client kubeconfig of the k8s cluster
 
 Use "ezctl help <command>" for more information about a given command.
@@ -38,23 +40,24 @@ EOF
 }
 
 function logger() {
-  TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
-  case "$1" in
-    debug)
-      echo -e "$TIMESTAMP \033[36mDEBUG\033[0m $2"
-      ;;
-    info)
-      echo -e "$TIMESTAMP \033[32mINFO\033[0m $2"
-      ;;
-    warn)
-      echo -e "$TIMESTAMP \033[33mWARN\033[0m $2"
-      ;;
-    error)
-      echo -e "$TIMESTAMP \033[31mERROR\033[0m $2"
-      ;;
-    *)
-      ;;
-  esac
+    TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
+    local FNAME=$(basename "${BASH_SOURCE[1]}")
+    local SOURCE="\033[36m[$FNAME:${BASH_LINENO[0]}]\033[0m"
+    case "$1" in
+        debug)
+            echo -e "\033[36m$TIMESTAMP\033[0m $SOURCE \033[36mDEBUG $2\033[0m"
+            ;;
+        info)
+            echo -e "\033[36m$TIMESTAMP\033[0m $SOURCE \033[32mINFO $2\033[0m"
+            ;;
+        warn)
+            echo -e "\033[36m$TIMESTAMP\033[0m $SOURCE \033[33mWARN $2\033[0m"
+            ;;
+        error)
+            echo -e "\033[36m$TIMESTAMP\033[0m $SOURCE \033[31mERROR $2\033[0m"
+            ;;
+        *) ;;
+    esac
 }
 
 function help-info() {
@@ -80,6 +83,11 @@ function help-info() {
         (del-node)
             echo -e "read more > 'https://github.com/easzlab/kubeasz/blob/master/docs/op/op-node.md'"
             ;;
+        (kca-renew)
+	    echo -e "WARNNING: this command should be used with caution"
+	    echo -e "force to recreate CA certs and all of the others certs used in the cluster"
+	    echo -e "it should be used only when the admin.conf leaked"
+            ;;
         (kcfg-adm)
 	    usage-kcfg-adm
             ;;
@@ -93,7 +101,7 @@ function usage-kcfg-adm(){
   echo -e "\033[33mUsage:\033[0m ezctl kcfg-adm <cluster> <args>"
   cat <<EOF
 available <args>:
-    -A     to add a client kubeconfig with a newly created user 
+    -A     to add a client kubeconfig with a newly created user
     -D     to delete a client kubeconfig with the existed user
     -L     to list all of the users
     -e     to set expiry of the user certs in hours (ex. 24h, 8h, 240h)
@@ -110,7 +118,7 @@ function usage-setup(){
   echo -e "\033[33mUsage:\033[0m ezctl setup <cluster> <step>"
   cat <<EOF
 available steps:
-    01  prepare            to prepare CA/certs & kubeconfig & other system settings 
+    01  prepare            to prepare CA/certs & kubeconfig & other system settings
     02  etcd               to setup the etcd cluster
     03  container-runtime  to setup the container runtime(docker or containerd)
     04  kube-master        to setup the master nodes
@@ -152,16 +160,18 @@ function new() {
     dashboardVer=$(grep 'dashboardVer=' ezdown|cut -d'=' -f2)
     dashboardMetricsScraperVer=$(grep 'dashboardMetricsScraperVer=' ezdown|cut -d'=' -f2)
     metricsVer=$(grep 'metricsVer=' ezdown|cut -d'=' -f2)
+    localpathProvisionerVer=$(grep 'localpathProvisionerVer=' ezdown|cut -d'=' -f2)
     nfsProvisionerVer=$(grep 'nfsProvisionerVer=' ezdown|cut -d'=' -f2)
     pauseVer=$(grep 'pauseVer=' ezdown|cut -d'=' -f2)
     promChartVer=$(grep 'promChartVer=' ezdown|cut -d'=' -f2)
+    kubeappsVer=$(grep 'kubeappsVer=' ezdown|cut -d'=' -f2)
     harborVer=$(grep 'HARBOR_VER=' ezdown|cut -d'=' -f2)
     registryMirror=true
 
     grep registry-mirrors /etc/docker/daemon.json > /dev/null 2>&1 || { logger debug "disable registry mirrors"; registryMirror=false; }
 
     sed -i -e "s/__k8s_ver__/$k8sVer/g" \
-           -e "s/__flannel__/$flannelVer/g" \
+       -e "s/__flannel__/$flannelVer/g" \
 	   -e "s/__calico__/$calicoVer/g" \
 	   -e "s/__cilium__/$ciliumVer/g" \
 	   -e "s/__kube_ovn__/$kubeOvnVer/g" \
@@ -171,8 +181,10 @@ function new() {
 	   -e "s/__dns_node_cache__/$dnsNodeCacheVer/g" \
 	   -e "s/__dashboard__/$dashboardVer/g" \
 	   -e "s/__dash_metrics__/$dashboardMetricsScraperVer/g" \
+	   -e "s/__local_path_provisioner__/$localpathProvisionerVer/g" \
 	   -e "s/__nfs_provisioner__/$nfsProvisionerVer/g" \
 	   -e "s/__prom_chart__/$promChartVer/g" \
+	   -e "s/__kubeapps_chart__/$kubeappsVer/g" \
 	   -e "s/__harbor__/$harborVer/g" \
 	   -e "s/^ENABLE_MIRROR_REGISTRY.*$/ENABLE_MIRROR_REGISTRY: $registryMirror/g" \
 	   -e "s/__metrics__/$metricsVer/g" "clusters/$1/config.yml"
@@ -224,12 +236,26 @@ function setup() {
           ;;
       (*)
           usage-setup
-          exit 1 
+          exit 1
           ;;
     esac
 
     COMMAND="ansible-playbook -i clusters/$1/hosts -e @clusters/$1/config.yml $EXTRA_ARGS playbooks/$PLAY_BOOK"
     echo "$COMMAND"
+
+    k8s_ver=$(bin/kube-apiserver --version|cut -d' ' -f2)
+    etcd_ver=v$(bin/etcd --version|grep 'etcd Version'|cut -d' ' -f3)
+    network_cni=$(grep CLUSTER_NETWORK "clusters/$1/hosts"|cut -d'"' -f2|sed 's/-//g')
+    network_cni_ver=$(grep -i "${network_cni}Ver" ezdown|cut -d'=' -f2|head -n1)
+
+    cat <<EOF
+*** Component Version *********************
+*******************************************
+*   kubernetes: ${k8s_ver}
+*   etcd: ${etcd_ver}
+*   ${network_cni}: ${network_cni_ver}
+*******************************************
+EOF
 
     logger info "cluster:$1 setup step:$2 begins in 5s, press any key to abort:\n"
     ! (read -r -t5 -n1) || { logger warn "setup abort"; return 1; }
@@ -295,7 +321,7 @@ function list() {
             else
                 echo -e "==> cluster $i:\t$c"
             fi
-            let "i++"
+            ((i++))
         fi
     done
 }
@@ -317,9 +343,6 @@ function add-node() {
     # check if the new node already exsited
     sed -n '/^\[kube_master/,/^\[harbor/p' "$BASE/clusters/$1/hosts"|grep -E "^$2$|^$2 " && { logger error "node $2 already existed in $BASE/clusters/$1/hosts"; return 2; }
 
-    # add '/usr/bin/python' soft link, needed in some OS (ubuntu 16.04+) 
-    ssh "$2" ln -s /usr/bin/python3 /usr/bin/python || echo ""
-
     logger info "add $2 into 'kube_node' group"
     NODE_INFO="${@:2}"
     sed -i "/\[kube_node/a $NODE_INFO" "$BASE/clusters/$1/hosts"
@@ -335,9 +358,6 @@ function add-master() {
     # check if the new master already exsited
     sed -n '/^\[kube_master/,/^\[kube_node/p' "$BASE/clusters/$1/hosts"|grep -E "^$2$|^$2 " && { logger error "master $2 already existed!"; return 2; }
 
-    # add '/usr/bin/python' soft link, needed in some OS (ubuntu 16.04+) 
-    ssh "$2" ln -s /usr/bin/python3 /usr/bin/python || echo ""
-
     logger info "add $2 into 'kube_master' group"
     MASTER_INFO="${@:2}"
     sed -i "/\[kube_master/a $MASTER_INFO" "$BASE/clusters/$1/hosts"
@@ -346,7 +366,7 @@ function add-master() {
     ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/23.addmaster.yml" -e "NODE_TO_ADD=$2" -e "@clusters/$1/config.yml"
 
     logger info "reconfigure and restart 'kube-lb' service"
-    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/90.setup.yml" -t restart_kube-lb -e "@clusters/$1/config.yml" 
+    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/90.setup.yml" -t restart_kube-lb -e "@clusters/$1/config.yml"
 
     logger info "reconfigure and restart 'ex-lb' service"
     ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/10.ex-lb.yml" -t restart_lb -e "@clusters/$1/config.yml"
@@ -359,9 +379,6 @@ function add-etcd() {
     # check if the new node already exsited
     sed -n '/^\[etcd/,/^\[kube_master/p' "$BASE/clusters/$1/hosts"|grep -E "^$2$|^$2 " && { logger error "etcd $2 already existed!"; return 2; }
 
-    # add '/usr/bin/python' soft link, needed in some OS (ubuntu 16.04+) 
-    ssh "$2" ln -s /usr/bin/python3 /usr/bin/python || echo ""
-
     logger info "add $2 into 'etcd' group"
     ETCD_INFO="${@:2}"
     sed -i "/\[etcd/a $ETCD_INFO" "$BASE/clusters/$1/hosts"
@@ -371,9 +388,9 @@ function add-etcd() {
 
     logger info "reconfig &restart the etcd cluster"
     ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/02.etcd.yml" -t restart_etcd -e "@clusters/$1/config.yml"
-    
+
     logger info "restart apiservers to use the new etcd cluster"
-    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/04.kube-master.yml" -t restart_master -e "@clusters/$1/config.yml" 
+    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/04.kube-master.yml" -t restart_master -e "@clusters/$1/config.yml"
 }
 
 function del-etcd() {
@@ -388,9 +405,9 @@ function del-etcd() {
 
     logger info "reconfig &restart the etcd cluster"
     ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/02.etcd.yml" -t restart_etcd -e "@clusters/$1/config.yml"
-    
+
     logger info "restart apiservers to use the new etcd cluster"
-    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/04.kube-master.yml" -t restart_master -e "@clusters/$1/config.yml" 
+    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/04.kube-master.yml" -t restart_master -e "@clusters/$1/config.yml"
 }
 
 function del-node() {
@@ -412,13 +429,13 @@ function del-master() {
     sed -n '/^\[kube_master/,/^\[kube_node/p' "$BASE/clusters/$1/hosts"|grep -E "^$2$|^$2 " || { logger error "master $2 not existed!"; return 2; }
 
     logger warn "start to delete the master:$2 from cluster:$1"
-    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/33.delmaster.yml" -e "NODE_TO_DEL=$2" -e "CLUSTER=$1" -e "@clusters/$1/config.yml" 
+    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/33.delmaster.yml" -e "NODE_TO_DEL=$2" -e "CLUSTER=$1" -e "@clusters/$1/config.yml"
 
     logger info "reconfig kubeconfig in ansible manage node"
     ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/roles/deploy/deploy.yml" -t create_kctl_cfg -e "@clusters/$1/config.yml"
 
     logger info "reconfigure and restart 'kube-lb' service"
-    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/90.setup.yml" -t restart_kube-lb -e "@clusters/$1/config.yml" 
+    ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/90.setup.yml" -t restart_kube-lb -e "@clusters/$1/config.yml"
 
     logger info "reconfigure and restart 'ex-lb' service"
     ansible-playbook -i "$BASE/clusters/$1/hosts" "$BASE/playbooks/10.ex-lb.yml" -t restart_lb -e "@clusters/$1/config.yml"
@@ -453,9 +470,24 @@ function start-aio(){
 }
 
 ### Extra functions #############################################
-EXPIRY=4800h        # default cert will expire in 200 days
-USER_TYPE=admin     # admin/view, admin=clusterrole:cluster-admin view=clusterrole:view 
-USER_NAME=user
+function renew-ca() {
+    [[ -d "clusters/$1" ]] || { logger error "invalid cluster, run 'ezctl new $1' first"; return 1; }
+
+    logger warn "WARNNING: this script should be used with greate caution"
+    logger warn "WARNNING: it will recreate CA certs and all of the others certs used in the cluster"
+
+    COMMAND="ansible-playbook -i clusters/$1/hosts -e @clusters/$1/config.yml -e CHANGE_CA=true playbooks/96.update-certs.yml -t force_change_certs"
+    echo "$COMMAND"
+    logger info "cluster:$1 process begins in 5s, press any key to abort:\n"
+    ! (read -r -t5 -n1) || { logger warn "process abort"; return 1; }
+
+    ${COMMAND} || return 1
+}
+
+
+EXPIRY="4800h"        # default cert will expire in 200 days
+USER_TYPE="admin"     # admin/view, admin=clusterrole:cluster-admin view=clusterrole:view
+USER_NAME="user"
 function kcfg-adm() {
     OPTIND=2
     ACTION=""
@@ -492,7 +524,7 @@ function kcfg-adm() {
 
     logger info "$ACTION"
     ${ACTION} || { logger error "$ACTION fail"; return 1; }
-    logger info "$ACTION success" 
+    logger info "$ACTION success"
 }
 
 function add-kcfg(){
@@ -515,10 +547,10 @@ function list-kcfg(){
     ADMINS=$(bin/kubectl --kubeconfig="clusters/$1/kubectl.kubeconfig" get clusterrolebindings -ojsonpath='{.items[?(@.roleRef.name == "cluster-admin")].subjects[*].name}')
     VIEWS=$(bin/kubectl --kubeconfig="clusters/$1/kubectl.kubeconfig" get clusterrolebindings -ojsonpath='{.items[?(@.roleRef.name == "view")].subjects[*].name}')
     ALL=$(bin/kubectl --kubeconfig="clusters/$1/kubectl.kubeconfig" get clusterrolebindings -ojsonpath='{.items[*].subjects[*].name}')
-    
+
     printf "\n%-30s %-15s %-20s\n" USER TYPE "EXPIRY(+8h if in Asia/Shanghai)"
     echo "---------------------------------------------------------------------------------"
-    
+
     for u in $ADMINS; do
        if [[ $u =~ ^.*-[0-9]{12}$ ]];then
           t=$(bin/cfssl-certinfo -cert "clusters/$1/ssl/users/$u.pem"|grep not_after|awk '{print $2}'|sed 's/"//g'|sed 's/,//g')
@@ -552,13 +584,13 @@ function main() {
   cd "$BASE"
 
   # check bash shell
-  readlink /proc/$$/exe|grep -q "dash" && { logger error "you should use bash shell only"; exit 1; }
+  readlink /proc/$$/exe|grep -q "bash" || { logger error "you should use bash shell only"; exit 1; }
 
   # check 'ansible' executable
   which ansible > /dev/null 2>&1 || { logger error "need 'ansible', try: 'pip install ansible'"; usage; exit 1; }
-  
+
   [ "$#" -gt 0 ] || { usage >&2; exit 2; }
-  
+
   case "$1" in
       ### in-cluster operations #####################
       (add-etcd)
@@ -631,6 +663,10 @@ function main() {
           start-aio
           ;;
       ### extra operations ##############################
+      (kca-renew)
+          [ "$#" -eq 2 ] || { usage >&2; exit 2; }
+          renew-ca "$2"
+          ;;
       (kcfg-adm)
           [ "$#" -gt 2 ] || { usage-kcfg-adm >&2; exit 2; }
           kcfg-adm "${@:2}"
@@ -647,4 +683,4 @@ function main() {
   esac
  }
 
-main "$@" 
+main "$@"

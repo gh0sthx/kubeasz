@@ -1,6 +1,6 @@
 image:
   repository: "easzlab.io.local:5000/cilium/cilium"
-  tag: "v1.11.6"
+  tag: "v{{ cilium_ver }}"
   useDigest: false
 
 # -- Additional agent container arguments.
@@ -17,40 +17,31 @@ resources:
     cpu: 100m
     memory: 512Mi
 
-cni:
-  binPath: {{ bin_dir }}
-
-containerRuntime:
-  integration: containerd
-  socketPath: unix:///run/containerd/containerd.sock
-
 {% if cilium_hubble_enabled %}
 hubble:
   enabled: true
-  metrics:
-    enabled:
-    - dns
-    - drop
-    - tcp
-    - flow
-    - icmp
-    - http
   relay:
     enabled: true
     image:
       repository: "easzlab.io.local:5000/cilium/hubble-relay"
-      tag: "v1.11.6"
+      tag: "v{{ cilium_ver }}"
       useDigest: false
   ui:
+{% if cilium_hubble_ui_enabled %}
     enabled: true
+{% else %}
+    enabled: false
+{% endif %}
     backend:
       image:
         repository: "easzlab.io.local:5000/cilium/hubble-ui-backend"
-        tag: "v0.9.0"
+        tag: "v0.13.1"
+        useDigest: false
     frontend:
       image:
         repository: "easzlab.io.local:5000/cilium/hubble-ui"
-        tag: "v0.9.0"
+        tag: "v0.13.1"
+        useDigest: false
 {% endif %}
 
 identityAllocationMode: "crd"
@@ -62,23 +53,13 @@ ipam:
     clusterPoolIPv4PodCIDRList: ["{{ CLUSTER_CIDR }}"]
     clusterPoolIPv4MaskSize: 24
 
+# -- Enable Layer 7 network policy.
 l7Proxy: true
-
-# -- Configure Istio proxy options.
-proxy:
-  prometheus:
-    enabled: false
-    port: "9095"
-  # -- Regular expression matching compatible Istio sidecar istio-proxy
-  # container image names
-  sidecarImageRegex: "cilium/istio_proxy"
 
 # -- Configure TLS configuration in the agent.
 tls:
   enabled: true
   secretsBackend: local
-
-tunnel: "vxlan"
 
 etcd:
   enabled: false
@@ -87,7 +68,7 @@ operator:
   enabled: true
   image:
     repository: "easzlab.io.local:5000/cilium/operator"
-    tag: "v1.11.6"
+    tag: "v{{ cilium_ver }}"
     useDigest: false
   replicas: 1
   resources:
@@ -103,3 +84,6 @@ preflight:
 
 clustermesh:
   useAPIServer: false
+
+envoy:
+  enabled: false

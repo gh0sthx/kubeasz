@@ -2,7 +2,7 @@
 
 本步骤主要完成: 
 
-- (optional) role:os-harden，可选系统加固，符合linux安全基线，详见[upstream](https://github.com/dev-sec/ansible-collection-hardening/tree/master/roles/os_hardening)
+- (deprecated) role:os-harden，（未更新上游项目，未验证最新k8s集群安装，不建议启用）可选系统加固，符合linux安全基线，详见[upstream](https://github.com/dev-sec/ansible-collection-hardening/tree/master/roles/os_hardening)
 - (optional) role:chrony，[可选集群节点时间同步](../guide/chrony.md)
 - role:deploy，创建CA证书、集群组件访问apiserver所需的各种kubeconfig
 - role:prepare，系统基础环境配置、分发CA证书、kubectl客户端安装
@@ -40,9 +40,7 @@ kubernetes 系统各组件需要使用 TLS 证书对通信进行加密，使用 
             "client auth"
         ],
         "expiry": "{{ CERT_EXPIRY }}"
-      }
-    },
-    "profiles": {
+      },
       "kcfg": {
         "usages": [
             "signing",
@@ -64,7 +62,7 @@ kubernetes 系统各组件需要使用 TLS 证书对通信进行加密，使用 
 #### 创建 CA 证书签名请求 [ca-csr.json.j2](../../roles/deploy/templates/ca-csr.json.j2)
 ``` bash
 {
-  "CN": "kubernetes",
+  "CN": "kubernetes-ca",
   "key": {
     "algo": "rsa",
     "size": 2048
@@ -207,13 +205,17 @@ kubectl config set-context default --cluster=kubernetes --user=kube-proxy --kube
 kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
 ```
 
+### 创建kube-controller-manager 和 kube-scheduler 组件的kubeconfig 文件
+
+过程与创建kube-proxy.kubeconfig 类似，略。
+
 ## prepare 角色
 
 请在另外窗口打开[roles/prepare/tasks/main.yml](../../roles/prepare/tasks/main.yml) 文件，比较简单直观
 
 1. 设置基础操作系统软件和系统参数，请阅读脚本中的注释内容
-1. 创建一些基础文件目录
-1. 分发kubeconfig配置文件
+1. 创建一些基础文件目录、环境变量以及添加本地镜像仓库`easzlab.io.local`的域名解析
+1. 分发kubeconfig等配置文件
 
 
 [后一篇](02-install_etcd.md)
